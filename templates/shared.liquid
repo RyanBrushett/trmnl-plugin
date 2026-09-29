@@ -1,0 +1,65 @@
+{% template clock %}
+  {% assign hour = minutes | divided_by: 60 -%}
+  {% assign minute = minutes | modulo: 60 -%}
+  {% if hour < 10 %}0{% endif %}{{ hour }}:{% if minute < 10 %}0{% endif %}{{ minute }}
+{% endtemplate %}
+
+{% template header %}
+<div class="flex" style="justify-content: space-between; align-items: baseline; width: 100%; background: #000; color: #fff; padding: 6px 12px;">
+  <span class="text--xlarge text--bold">Events {{ mode | capitalize }}{% if mode == "tomorrow" %} ({{ date | date: "%a %-d %b" | replace: "Sep", "Sept" }}){% endif %}</span>
+  <span class="text--large">{{ today | date: "%a %-d %b" | replace: "Sep", "Sept" }}</span>
+</div>
+{% endtemplate %}
+
+{% template event_row %}
+<div class="item">
+  <div class="content">
+    <div class="flex" style="gap: 20px; align-items: baseline;">
+      <span class="text--large text--bold" style="flex: none; width: 140px;">{{ time_range }}</span>
+      <span class="text--large" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ title | escape }}</span>
+    </div>
+  </div>
+</div>
+{% endtemplate %}
+
+{% template weather_hour %}
+<div class="col col--center" style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; padding: 6px 0;{% if after_gap %} border-left: 2px solid #000;{% endif %}">
+  <span class="text--base text--bold">{{ hour_label }}</span>
+  {{ icon }}
+  <span class="text--xxlarge">{{ temperature }}°</span>
+  <span class="text--base">PoP: {{ pop }}%</span>
+</div>
+{% endtemplate %}
+
+{% template weather_icon %}
+{% capture svg_open %}<svg width="48" height="48" viewBox="0 0 32 32" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{% endcapture %}
+{% capture cloud_above_precipitation %}<path d="M9 19h14a5 5 0 0 0 .6-10 7 7 0 0 0-13.2-1.5A5.5 5.5 0 0 0 9 19z"/>{% endcapture %}
+{% case condition %}
+  {% when "clear" %}
+    {{ svg_open }}<circle cx="16" cy="16" r="5"/><path d="M16 4v3M16 25v3M4 16h3M25 16h3M7.5 7.5l2 2M22.5 22.5l2 2M7.5 24.5l2-2M22.5 9.5l2-2"/></svg>
+  {% when "partly" %}
+    {{ svg_open }}<circle cx="11" cy="11" r="4"/><path d="M11 3v2M3 11h2M5.5 5.5l1.5 1.5M16.5 5.5L15 7M11 19"/><path d="M12 27h11a4.5 4.5 0 0 0 .5-9 6 6 0 0 0-11-1.5A5 5 0 0 0 12 27z"/></svg>
+  {% when "cloud" %}
+    {{ svg_open }}<path d="M9 25h14a5 5 0 0 0 .6-10 7 7 0 0 0-13.2-1.5A5.5 5.5 0 0 0 9 25z"/></svg>
+  {% when "fog" %}
+    {{ svg_open }}<path d="M5 11h22M8 16h19M5 21h22M10 26h14"/></svg>
+  {% when "drizzle" %}
+    {{ svg_open }}{{ cloud_above_precipitation }}<path d="M11 24v1M16 26v1M21 24v1"/></svg>
+  {% when "rain" %}
+    {{ svg_open }}{{ cloud_above_precipitation }}<path d="M10 23l-1.5 4M16 23l-1.5 4M22 23l-1.5 4"/></svg>
+  {% when "snow" %}
+    {{ svg_open }}{{ cloud_above_precipitation }}<path d="M10 24v.5M16 26v.5M22 24v.5M13 28v.5M19 28v.5"/></svg>
+  {% when "storm" %}
+    {{ svg_open }}{{ cloud_above_precipitation }}<path d="M17 20l-3 5h4l-3 5"/></svg>
+  {% else %}
+    {{ svg_open }}<circle cx="16" cy="16" r="11"/><path d="M13 13a3 3 0 1 1 4 2.8c-.8.4-1 1-1 2M16 22v.5"/></svg>
+{% endcase %}
+{% endtemplate %}
+
+{% template error_screen %}
+<div class="layout layout--col layout--center">
+  <span class="text--xxlarge text--bold">Update failed</span>
+  <span class="text--large">{{ error | escape }}</span>
+  <span class="label">{{ where | escape }} at {{ at | escape }}</span>
+</div>
+{% endtemplate %}

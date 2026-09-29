@@ -1,0 +1,69 @@
+#!/usr/bin/env ruby
+# Usage: bin/push [--dry-run] [--sample-events]
+# Settings come from .env (see .env.example) or the real environment.
+
+$LOAD_PATH.unshift File.expand_path("../lib", __dir__)
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup"
+require "dotenv"
+Dotenv.load(File.expand_path("../.env", __dir__))
+
+require "json"
+require "optparse"
+require "calendar_source"
+require "config"
+require "error_payload"
+require "sample_events"
+require "updater"
+require "weather"
+require "webhook"
+
+options = {dry_run: false, sample_events: false}
+OptionParser.new do |parser|
+  parser.on("--dry-run", "Print the payload instead of sending it") { options[:dry_run] = true }
+  parser.on("--sample-events", "Use made-up events instead of Google Calendar") { options[:sample_events] = true }
+end.parse!
+
+begin
+  config = Config.from_env(ENV, require_webhook: !options[:dry_run])
+  ENV["TZ"] = config.timezone
+  local_time = Time.now
+
+  events_source =
+    if options[:sample_events]
+      -> { SampleEvents.for(local_time) }
+    elsif config.google?
+      lambda do
+        CalendarSource.from_credentials(
+          client_id: config.google_client_id,
+          client_secret: config.google_client_secret,
+          refresh_token: config.google_refresh_token
+        ).events(local_time: local_time)
+      end
+    else
+      warn "no Google settings found, so no events will be shown"
+      -> { [] }
+    end
+
+  body = Updater.new(
+    weather: Weather.new(lat: config.lat, lon: config.lon),
+    events_source: events_source,
+    local_time: local_time
+  ).body
+
+  if options[:dry_run]
+    puts JSON.pretty_generate(body)
+    warn "#{body.to_json.bytesize} bytes, mode: #{body.dig("merge_variables", "mode")}"
+  else
+    Webhook.new(config.webhook_uuid).post(body)
+  end
+
+  if body.dig("merge_variables", "mode") == ErrorPayload::MODE
+    warn "update failed: #{body.dig("merge_variables", "error")}"
+    exit 1
+  end
+rescue Config::Error, Webhook::Error => error
+  warn "push failed: #{error.message}"
+  exit 1
+end

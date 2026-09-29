@@ -1,0 +1,35 @@
+{% if mode == "error" %}
+  {% render "error_screen", error: error, where: where, at: at %}
+{% else %}
+<div class="layout layout--col">
+  {% render "header", mode: mode, date: date, today: today %}
+
+  <div style="flex: 1; width: 100%; overflow: hidden;">
+    {% if events.size == 0 %}
+      <div class="item"><div class="content"><span class="text--base">Nothing on</span></div></div>
+    {% endif %}
+    {% for event in events %}
+      {% if event[0] == nil %}
+        {% assign time_range = "All day" %}
+      {% else %}
+        {% capture time_range %}{% render "clock", minutes: event[0] %}–{% render "clock", minutes: event[1] %}{% endcapture %}
+      {% endif %}
+      {% render "event_row", time_range: time_range, title: event[2] %}
+    {% endfor %}
+  </div>
+
+  <div class="grid grid--cols-8" style="width: 100%; border-top: 2px solid #000; padding-top: 8px;">
+    {% assign previous_hour = -1 %}
+    {% for row in weather %}
+      {% assign expected_hour = previous_hour | plus: 1 | modulo: 24 %}
+      {% assign after_gap = false %}
+      {% if forloop.index0 > 0 and row[0] != expected_hour %}{% assign after_gap = true %}{% endif %}
+      {% assign hour_minutes = row[0] | times: 60 %}
+      {% capture hour_label %}{% render "clock", minutes: hour_minutes %}{% endcapture %}
+      {% capture icon %}{% render "weather_icon", condition: row[2] %}{% endcapture %}
+      {% render "weather_hour", hour_label: hour_label, icon: icon, temperature: row[1], pop: row[3], after_gap: after_gap %}
+      {% assign previous_hour = row[0] %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
