@@ -2,11 +2,12 @@ require "test_helper"
 require "calendar_source"
 
 class CalendarSourceTest < Minitest::Test
-  URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+  CALENDAR_ID = "me@example.com"
+  URL = "https://www.googleapis.com/calendar/v3/calendars/#{CALENDAR_ID}/events"
   LOCAL_TIME = Time.new(2026, 9, 29, 14, 30, 0, SVALBARD_OFFSET)
 
   def setup
-    @source = CalendarSource.new(service: Google::Apis::CalendarV3::CalendarService.new)
+    @source = CalendarSource.new(service: Google::Apis::CalendarV3::CalendarService.new, calendar_id: CALENDAR_ID)
   end
 
   def timed(summary, from, to, **extra)
@@ -65,14 +66,14 @@ class CalendarSourceTest < Minitest::Test
 
   def test_hides_events_i_have_declined
     declined = timed("Skipped", "2026-09-29T15:00:00+02:00", "2026-09-29T16:00:00+02:00",
-      "attendees" => [{"email" => "me@example.com", "self" => true, "responseStatus" => "declined"}])
+      "attendees" => [{"email" => CALENDAR_ID, "responseStatus" => "declined"}])
 
     assert_empty fetched([declined])
   end
 
   def test_keeps_events_someone_else_declined
     others = timed("Team lunch", "2026-09-29T12:00:00+02:00", "2026-09-29T13:00:00+02:00",
-      "attendees" => [{"email" => "me@example.com", "self" => true, "responseStatus" => "accepted"},
+      "attendees" => [{"email" => CALENDAR_ID, "responseStatus" => "accepted"},
         {"email" => "them@example.com", "responseStatus" => "declined"}])
 
     assert_equal ["Team lunch"], fetched([others]).map(&:title)
@@ -81,7 +82,7 @@ class CalendarSourceTest < Minitest::Test
   def test_keeps_tentative_and_not_yet_answered_events
     statuses = %w[tentative needsAction accepted].map do |response|
       timed(response, "2026-09-29T15:00:00+02:00", "2026-09-29T16:00:00+02:00",
-        "attendees" => [{"email" => "me@example.com", "self" => true, "responseStatus" => response}])
+        "attendees" => [{"email" => CALENDAR_ID, "responseStatus" => response}])
     end
 
     assert_equal %w[tentative needsAction accepted], fetched(statuses).map(&:title)
@@ -149,13 +150,5 @@ class CalendarSourceTest < Minitest::Test
     stub_request(:get, URL).with(query: hash_including({})).to_return(status: 503, body: "{}", headers: {"Content-Type" => "application/json"})
 
     assert_raises(CalendarSource::Error) { @source.events(local_time: LOCAL_TIME) }
-  end
-
-  def test_builds_a_service_with_user_credentials_and_timeouts
-    source = CalendarSource.from_credentials(client_id: "id", client_secret: "secret", refresh_token: "token")
-    service = source.instance_variable_get(:@service)
-
-    assert_equal [Google::Auth::UserRefreshCredentials, CalendarSource::TIMEOUT_SECONDS, CalendarSource::TIMEOUT_SECONDS],
-      [service.authorization.class, service.client_options.open_timeout_sec, service.client_options.read_timeout_sec]
   end
 end

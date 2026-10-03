@@ -21,7 +21,7 @@ group :development do
 end
 
 group :test do
-  gem "base64" # Required directly by consent_flow_test
+  gem "base64" # Required directly by calendar_source_service_account_test
   gem "minitest"
   gem "rake"
   gem "webmock"

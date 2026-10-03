@@ -54,6 +54,26 @@ class WebhookTest < Minitest::Test
     assert_match(/unreachable/, error.message)
   end
 
+  def test_every_kind_of_timeout_is_a_timeout_error
+    [Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Timeout::Error].each do |timeout|
+      stub_request(:post, URL).to_raise(timeout)
+
+      error = assert_raises(Webhook::Error, timeout.name) { Webhook.new(UUID).post(BODY) }
+
+      assert_match(/timed out/, error.message, timeout.name)
+    end
+  end
+
+  def test_a_dropped_or_garbled_connection_is_an_unreachable_error
+    [IOError, EOFError, Net::ProtocolError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError, OpenSSL::SSL::SSLError].each do |failure|
+      stub_request(:post, URL).to_raise(failure)
+
+      error = assert_raises(Webhook::Error, failure.name) { Webhook.new(UUID).post(BODY) }
+
+      assert_equal "TRMNL webhook unreachable (#{failure.name})", error.message
+    end
+  end
+
   def test_error_messages_do_not_contain_the_uuid
     stub_request(:post, URL).to_return(status: 404)
 

@@ -1,12 +1,13 @@
-class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_client_id, :google_client_secret, :google_refresh_token)
+class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_key_file, :google_calendar_id)
   class Error < StandardError; end
 
   ZONEINFO_DIR = "/usr/share/zoneinfo"
+  ZONE_NAME = %r{\A[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*\z}
+  ZONE_FILE_MAGIC = "TZif"
   URL_SAFE_ID = /\A[A-Za-z0-9_-]+\z/
   GOOGLE_SETTINGS = {
-    google_client_id: "GOOGLE_CLIENT_ID",
-    google_client_secret: "GOOGLE_CLIENT_SECRET",
-    google_refresh_token: "GOOGLE_REFRESH_TOKEN"
+    google_key_file: "GOOGLE_SERVICE_ACCOUNT_KEY_FILE",
+    google_calendar_id: "GOOGLE_CALENDAR_ID"
   }.freeze
 
   def self.from_env(env, require_webhook: true)
@@ -24,9 +25,7 @@ class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_client_
     )
   end
 
-  def google?
-    !google_client_id.nil?
-  end
+  def google? = !google_key_file.nil?
 
   def self.coordinate(env, name, limit:)
     value = Float(env[name])
@@ -40,11 +39,23 @@ class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_client_
 
   def self.timezone(env)
     name = env["HOME_TIMEZONE"]
-    raise Error, "unknown HOME_TIMEZONE: #{name}" unless File.file?(File.join(ZONEINFO_DIR, name))
+    raise Error, "unknown HOME_TIMEZONE: #{name}" unless zone?(name)
 
     name
   end
   private_class_method :timezone
+
+  # The zone folder also holds text files such as zone.tab, and an invalid
+  # TZ silently becomes UTC, so check the name's shape and the file's header.
+  def self.zone?(name, dir: ZONEINFO_DIR)
+    return false unless ZONE_NAME.match?(name)
+
+    path = File.join(dir, name)
+    File.file?(path) && File.binread(path, ZONE_FILE_MAGIC.bytesize) == ZONE_FILE_MAGIC
+  rescue SystemCallError
+    false
+  end
+  private_class_method :zone?
 
   # The message never repeats the value, because it is a secret.
   def self.webhook_uuid(env)
@@ -55,13 +66,17 @@ class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_client_
   end
   private_class_method :webhook_uuid
 
-  # Optional, but all three or none: a half-filled set is a mistake worth naming.
+  # Optional, but both or neither: a half-filled pair is a mistake worth naming.
   def self.google_settings(env)
     values = GOOGLE_SETTINGS.transform_values { |name| env[name].to_s.strip.then { |value| value.empty? ? nil : value } }
     return values if values.values.none?
 
     missing = GOOGLE_SETTINGS.select { |key, _| values[key].nil? }.values
-    raise Error, "incomplete Google settings, missing: #{missing.join(", ")}" if missing.any?
+    raise Error, "incomplete Google service account settings, missing: #{missing.join(", ")}" if missing.any?
+
+    if values[:google_calendar_id].casecmp?("primary")
+      raise Error, "GOOGLE_CALENDAR_ID must be the calendar's email address, because for a service account \"primary\" is its own empty calendar"
+    end
 
     values
   end

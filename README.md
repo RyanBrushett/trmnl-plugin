@@ -47,12 +47,15 @@ Copy the UUID from its webhook URL into `.env`.
 
 ## Google Calendar
 
-Reads your primary calendar, read-only, and hides events you have declined. Without these settings `bin/push` shows no events (use `--sample-events` to see made-up ones).
+Reads one calendar, read-only, and hides events you have declined. Without these settings the screen shows an error saying so, rather than an empty day (use `--sample-events` to see made-up events instead).
 
-1. In Google Cloud (signed in with the Google account whose calendar you want to read), create a project, enable the Google Calendar API, set up the OAuth consent screen with the scope `https://www.googleapis.com/auth/calendar.events.readonly` and yourself as a test user, then create an OAuth client of type "Desktop app".
-2. Put its client ID and secret in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
-3. Run `bin/google_auth`. It opens Google's consent page and prints a refresh token; put that in `.env` as `GOOGLE_REFRESH_TOKEN`. While the app is in "Testing" on Google's side, the token expires after 7 days and you re-run this.
-4. `bin/push --dry-run` should now list your real events.
+It signs in as a service account: a robot identity with its own key, so there is no consent screen and nothing to renew.
+
+1. In Google Cloud, create a project, enable the Google Calendar API, and create a service account (it needs no project roles).
+2. Create a JSON key for it and keep the file somewhere private, outside the repo.
+3. In Google Calendar, share your calendar with the service account's email address, with the permission "See all event details".
+4. In `.env`, set `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` to the key file's absolute path, and `GOOGLE_CALENDAR_ID` to the calendar's email address. A service account's own "primary" calendar is empty, so `primary` is rejected.
+5. `bin/push --dry-run` should now list your real events.
 
 ## Development
 

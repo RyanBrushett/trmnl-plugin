@@ -33,17 +33,8 @@ begin
   events_source =
     if options[:sample_events]
       -> { SampleEvents.for(local_time) }
-    elsif config.google?
-      lambda do
-        CalendarSource.from_credentials(
-          client_id: config.google_client_id,
-          client_secret: config.google_client_secret,
-          refresh_token: config.google_refresh_token
-        ).events(local_time: local_time)
-      end
     else
-      warn "no Google settings found, so no events will be shown"
-      -> { [] }
+      -> { CalendarSource.from_config(config).events(local_time: local_time) }
     end
 
   body = Updater.new(

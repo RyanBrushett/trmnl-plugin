@@ -1,6 +1,8 @@
 require "date"
 require "google/apis/calendar_v3"
 require "googleauth"
+require "json"
+require "openssl"
 require "payload"
 
 class CalendarSource
@@ -13,17 +15,47 @@ class CalendarSource
   CANCELLED = "cancelled"
   GOOGLE_ERRORS = [Google::Apis::Error, Signet::AuthorizationError].freeze
 
-  def self.from_credentials(client_id:, client_secret:, refresh_token:, calendar_id: "primary")
+  KEY_FILE_ERRORS = [SystemCallError, JSON::JSONError, Google::Auth::Error, OpenSSL::OpenSSLError].freeze
+
+  # An unconfigured calendar is an error on the screen, because "Nothing on"
+  # would look like a genuinely empty day.
+  class Missing
+    def events(local_time:)
+      raise Error, "Google Calendar is not set up (GOOGLE_SERVICE_ACCOUNT_KEY_FILE and GOOGLE_CALENDAR_ID are not set)"
+    end
+  end
+
+  def self.from_config(config)
+    return Missing.new unless config.google?
+
+    from_service_account(key_file: config.google_key_file, calendar_id: config.google_calendar_id)
+  end
+
+  def self.from_service_account(key_file:, calendar_id:)
+    path = File.expand_path(key_file)
+    credentials = File.open(path) do |key|
+      Google::Auth::ServiceAccountCredentials.make_creds(json_key_io: key, scope: SCOPE)
+    end
+
     service = Google::Apis::CalendarV3::CalendarService.new
     service.client_options.open_timeout_sec = TIMEOUT_SECONDS
     service.client_options.read_timeout_sec = TIMEOUT_SECONDS
-    service.authorization = Google::Auth::UserRefreshCredentials.new(
-      client_id: client_id, client_secret: client_secret, scope: SCOPE, refresh_token: refresh_token
-    )
+    service.authorization = credentials
     new(service: service, calendar_id: calendar_id)
+  rescue *KEY_FILE_ERRORS => e
+    raise Error, "cannot use the service account key #{File.basename(path)} (#{key_error_detail(e)})"
   end
 
-  def initialize(service:, calendar_id: "primary")
+  # The error page is sent to TRMNL, so it must never carry a path or a
+  # fragment of the key. Only googleauth's own messages (such as "missing
+  # client_email") are safe: they name fields and quote nothing.
+  def self.key_error_detail(error)
+    name = error.class.name.split("::").last
+    error.is_a?(Google::Auth::Error) ? "#{name}: #{error.message}" : name
+  end
+  private_class_method :key_error_detail
+
+  def initialize(service:, calendar_id:)
     @service = service
     @calendar_id = calendar_id
   end
@@ -59,7 +91,13 @@ class CalendarSource
   def cancelled?(event) = event.status == CANCELLED
 
   def declined_by_me?(event)
-    event.attendees.to_a.any? { |attendee| attendee.self? && attendee.response_status == DECLINED }
+    event.attendees.to_a.any? { |attendee| attendee.response_status == DECLINED && mine?(attendee) }
+  end
+
+  # A service account is not an attendee, so Google's "self" flag never marks
+  # the owner. The calendar's own address does.
+  def mine?(attendee)
+    attendee.email.to_s.casecmp?(@calendar_id)
   end
 
   def to_event(event)

@@ -8,7 +8,10 @@ class Webhook
 
   BASE_URL = "https://trmnl.com/api/custom_plugins"
   TIMEOUT_SECONDS = 10
-  NETWORK_ERRORS = [SocketError, SystemCallError, OpenSSL::SSL::SSLError, EOFError].freeze
+  NETWORK_ERRORS = [
+    SocketError, SystemCallError, OpenSSL::SSL::SSLError, IOError,
+    Net::ProtocolError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError
+  ].freeze
 
   def initialize(uuid)
     @uri = URI("#{BASE_URL}/#{uuid}")
@@ -20,11 +23,11 @@ class Webhook
 
     response = Net::HTTP.start(
       @uri.host, @uri.port,
-      use_ssl: true, open_timeout: TIMEOUT_SECONDS, read_timeout: TIMEOUT_SECONDS
+      use_ssl: true, open_timeout: TIMEOUT_SECONDS, read_timeout: TIMEOUT_SECONDS, write_timeout: TIMEOUT_SECONDS
     ) { |http| http.request(request) }
 
     raise Error, "TRMNL webhook returned HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
-  rescue Net::OpenTimeout, Net::ReadTimeout
+  rescue Timeout::Error
     raise Error, "TRMNL webhook timed out after #{TIMEOUT_SECONDS} seconds"
   rescue *NETWORK_ERRORS => e
     raise Error, "TRMNL webhook unreachable (#{e.class})"
