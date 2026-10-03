@@ -1,5 +1,7 @@
 # TRMNL
 
+[![Ruby](https://github.com/RyanBrushett/trmnl-plugin/actions/workflows/ruby.yml/badge.svg?branch=main)](https://github.com/RyanBrushett/trmnl-plugin/actions/workflows/ruby.yml)
+
 Pushes a glanceable daily screen (schedule and the next few hours of weather) to a TRMNL e-ink display through a private plugin webhook.
 
 ## Getting started
