@@ -80,9 +80,11 @@ gcloud iam service-accounts create trmnl-runner
 
 printf '%s' "$WEBHOOK_UUID"   | gcloud secrets create trmnl-webhook-uuid --replication-policy=automatic --data-file=-
 printf '%s' "$CALENDAR_EMAIL" | gcloud secrets create trmnl-calendar-id --replication-policy=automatic --data-file=-
+printf '%s' "$HOME_LAT"       | gcloud secrets create trmnl-home-lat --replication-policy=automatic --data-file=-
+printf '%s' "$HOME_LON"       | gcloud secrets create trmnl-home-lon --replication-policy=automatic --data-file=-
 gcloud secrets create trmnl-calendar-key --replication-policy=automatic --data-file=/path/to/service-account-key.json
 
-for secret in trmnl-webhook-uuid trmnl-calendar-id trmnl-calendar-key; do
+for secret in trmnl-webhook-uuid trmnl-calendar-id trmnl-home-lat trmnl-home-lon trmnl-calendar-key; do
   gcloud secrets add-iam-policy-binding "$secret" \
     --member serviceAccount:trmnl-runner@PROJECT.iam.gserviceaccount.com \
     --role roles/secretmanager.secretAccessor
@@ -102,13 +104,13 @@ Deploy (this builds the `Dockerfile` in the cloud) and run it once by hand:
 ```
 gcloud run jobs deploy trmnl-push --source . --region REGION \
   --service-account trmnl-runner@PROJECT.iam.gserviceaccount.com \
-  --set-env-vars HOME_LAT=...,HOME_LON=...,HOME_TIMEZONE=Region/City,GOOGLE_SERVICE_ACCOUNT_KEY_FILE=/secrets/key.json \
-  --set-secrets TRMNL_WEBHOOK_UUID=trmnl-webhook-uuid:latest,GOOGLE_CALENDAR_ID=trmnl-calendar-id:latest,/secrets/key.json=trmnl-calendar-key:latest \
+  --set-env-vars HOME_TIMEZONE=Region/City,GOOGLE_SERVICE_ACCOUNT_KEY_FILE=/secrets/key.json \
+  --set-secrets TRMNL_WEBHOOK_UUID=trmnl-webhook-uuid:latest,GOOGLE_CALENDAR_ID=trmnl-calendar-id:latest,HOME_LAT=trmnl-home-lat:latest,HOME_LON=trmnl-home-lon:latest,/secrets/key.json=trmnl-calendar-key:latest \
   --max-retries 1
 gcloud run jobs execute trmnl-push --region REGION --wait
 ```
 
-I schedule it, e.g. every 12 minutes by day and every 30 overnight. Scheduler calls the job as `trmnl-runner`, which needs permission to run it, or every call is refused and the screen quietly stops updating:
+Schedule it, e.g. every 12 minutes (TRMNL allows 12 pushes an hour). Scheduler calls the job as `trmnl-runner`, which needs permission to run it, or every call is refused and the screen quietly stops updating:
 
 ```
 gcloud run jobs add-iam-policy-binding trmnl-push --region REGION \
@@ -118,15 +120,11 @@ URI="https://run.googleapis.com/v2/projects/PROJECT/locations/REGION/jobs/trmnl-
 SA=trmnl-runner@PROJECT.iam.gserviceaccount.com
 
 gcloud scheduler jobs create http trmnl-push-schedule --location REGION \
-  --schedule "*/12 8-23 * * *" --time-zone "Region/City" \
-  --uri "$URI" --http-method POST --oauth-service-account-email "$SA"
-
-gcloud scheduler jobs create http trmnl-push-overnight --location REGION \
-  --schedule "0,30 0-7 * * *" --time-zone "Region/City" \
+  --schedule "*/12 * * * *" --time-zone "Region/City" \
   --uri "$URI" --http-method POST --oauth-service-account-email "$SA"
 ```
 
-To stop the updates, pause both schedules, e.g. `gcloud scheduler jobs pause trmnl-push-schedule --location REGION` (and `resume` to restart).
+To stop the updates, pause the schedule: `gcloud scheduler jobs pause trmnl-push-schedule --location REGION` (and `resume` to restart).
 
 ## Development
 
