@@ -126,6 +126,32 @@ gcloud scheduler jobs create http trmnl-push-schedule --location REGION \
 
 To stop the updates, pause the schedule: `gcloud scheduler jobs pause trmnl-push-schedule --location REGION` (and `resume` to restart).
 
+### Deploying from GitHub
+
+`.github/workflows/deploy.yml` redeploys the job whenever the `Ruby` workflow passes on a push to `main`. It signs in with Workload Identity Federation, so no key is stored in GitHub. It passes only `--source`, so the job keeps its service account, env vars and secrets. Set up once, replacing `OWNER/REPO` with your repo:
+
+```
+gcloud services enable iamcredentials.googleapis.com sts.googleapis.com
+gcloud iam service-accounts create github-deployer
+gcloud iam workload-identity-pools create github --location global
+gcloud iam workload-identity-pools providers create-oidc REPO --location global \
+  --workload-identity-pool github --issuer-uri https://token.actions.githubusercontent.com \
+  --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition "assertion.repository == 'OWNER/REPO' && assertion.ref == 'refs/heads/main'"
+
+DEPLOYER=github-deployer@PROJECT.iam.gserviceaccount.com
+gcloud iam service-accounts add-iam-policy-binding $DEPLOYER --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/OWNER/REPO"
+for role in roles/run.sourceDeveloper roles/serviceusage.serviceUsageConsumer; do
+  gcloud projects add-iam-policy-binding PROJECT --condition=None --member serviceAccount:$DEPLOYER --role $role
+done
+for sa in trmnl-runner@PROJECT.iam.gserviceaccount.com PROJECT_NUMBER-compute@developer.gserviceaccount.com; do
+  gcloud iam service-accounts add-iam-policy-binding $sa --member serviceAccount:$DEPLOYER --role roles/iam.serviceAccountUser
+done
+```
+
+The condition is what stops other repos using the identity, so keep it. Then add two repository secrets, `GCP_PROJECT_ID` and `GCP_WORKLOAD_IDENTITY_PROVIDER` (`projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/REPO`).
+
 ## Development
 
 ```
