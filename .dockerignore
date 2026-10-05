@@ -1,0 +1,10 @@
+.env
+.git
+.github
+.bundle
+vendor
+tmp
+test
+templates
+*.log
+*.json
