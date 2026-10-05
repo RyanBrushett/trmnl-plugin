@@ -108,20 +108,25 @@ gcloud run jobs deploy trmnl-push --source . --region REGION \
 gcloud run jobs execute trmnl-push --region REGION --wait
 ```
 
-I've scheduled it for e.g every 12 minutes. Scheduler calls the job as `trmnl-runner`, which needs permission to run it, or every call is refused and the screen quietly stops updating:
+I schedule it, e.g. every 12 minutes by day and every 30 overnight. Scheduler calls the job as `trmnl-runner`, which needs permission to run it, or every call is refused and the screen quietly stops updating:
 
 ```
 gcloud run jobs add-iam-policy-binding trmnl-push --region REGION \
   --member serviceAccount:trmnl-runner@PROJECT.iam.gserviceaccount.com --role roles/run.invoker
 
-gcloud scheduler jobs create http trmnl-push-schedule \
-  --location REGION --schedule "*/12 * * * *" --time-zone "Region/City" \
-  --uri "https://run.googleapis.com/v2/projects/PROJECT/locations/REGION/jobs/trmnl-push:run" \
-  --http-method POST \
-  --oauth-service-account-email trmnl-runner@PROJECT.iam.gserviceaccount.com
+URI="https://run.googleapis.com/v2/projects/PROJECT/locations/REGION/jobs/trmnl-push:run"
+SA=trmnl-runner@PROJECT.iam.gserviceaccount.com
+
+gcloud scheduler jobs create http trmnl-push-schedule --location REGION \
+  --schedule "*/12 8-23 * * *" --time-zone "Region/City" \
+  --uri "$URI" --http-method POST --oauth-service-account-email "$SA"
+
+gcloud scheduler jobs create http trmnl-push-overnight --location REGION \
+  --schedule "0,30 0-7 * * *" --time-zone "Region/City" \
+  --uri "$URI" --http-method POST --oauth-service-account-email "$SA"
 ```
 
-To stop the updates, `gcloud scheduler jobs pause trmnl-push-schedule --location REGION` (and `resume` to restart).
+To stop the updates, pause both schedules, e.g. `gcloud scheduler jobs pause trmnl-push-schedule --location REGION` (and `resume` to restart).
 
 ## Development
 
