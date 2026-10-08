@@ -1,4 +1,4 @@
-class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_key_file, :google_calendar_id)
+class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_key_file, :google_calendar_ids)
   class Error < StandardError; end
 
   ZONEINFO_DIR = "/usr/share/zoneinfo"
@@ -7,7 +7,7 @@ class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_key_fil
   URL_SAFE_ID = /\A[A-Za-z0-9_-]+\z/
   GOOGLE_SETTINGS = {
     google_key_file: "GOOGLE_SERVICE_ACCOUNT_KEY_FILE",
-    google_calendar_id: "GOOGLE_CALENDAR_ID"
+    google_calendar_ids: "GOOGLE_CALENDAR_ID"
   }.freeze
 
   def self.from_env(env, require_webhook: true)
@@ -69,16 +69,24 @@ class Config < Data.define(:lat, :lon, :webhook_uuid, :timezone, :google_key_fil
   # Optional, but both or neither: a half-filled pair is a mistake worth naming.
   def self.google_settings(env)
     values = GOOGLE_SETTINGS.transform_values { |name| env[name].to_s.strip.then { |value| value.empty? ? nil : value } }
+    values[:google_calendar_ids] = calendar_ids(values[:google_calendar_ids])
     return values if values.values.none?
 
     missing = GOOGLE_SETTINGS.select { |key, _| values[key].nil? }.values
     raise Error, "incomplete Google service account settings, missing: #{missing.join(", ")}" if missing.any?
 
-    if values[:google_calendar_id].casecmp?("primary")
-      raise Error, "GOOGLE_CALENDAR_ID must be the calendar's email address, because for a service account \"primary\" is its own empty calendar"
+    if values[:google_calendar_ids].any? { |id| id.casecmp?("primary") }
+      raise Error, "GOOGLE_CALENDAR_ID must list calendar email addresses, because for a service account \"primary\" is its own empty calendar"
     end
 
     values
   end
   private_class_method :google_settings
+
+  # GOOGLE_CALENDAR_ID is a comma-separated list of calendar email addresses.
+  def self.calendar_ids(value)
+    ids = value.to_s.split(",").map(&:strip).reject(&:empty?)
+    ids.empty? ? nil : ids
+  end
+  private_class_method :calendar_ids
 end

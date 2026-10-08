@@ -41,6 +41,19 @@ class CalendarSourceConfigTest < Minitest::Test
     end
   end
 
+  def test_several_calendar_ids_are_passed_through
+    Tempfile.create(["service-account", ".json"]) do |file|
+      file.write({type: "service_account", project_id: "p", private_key_id: "k", private_key: OpenSSL::PKey::RSA.new(2048).to_pem,
+                  client_email: "robot@p.iam.gserviceaccount.com", client_id: "1"}.to_json)
+      file.flush
+      env = BASE_ENV.merge("GOOGLE_SERVICE_ACCOUNT_KEY_FILE" => file.path, "GOOGLE_CALENDAR_ID" => "me@example.com, me@work.example")
+
+      source = CalendarSource.from_config(Config.from_env(env))
+
+      assert_equal %w[me@example.com me@work.example], source.instance_variable_get(:@calendar_ids)
+    end
+  end
+
   def test_a_bad_key_file_surfaces_as_a_calendar_error_not_a_crash
     env = BASE_ENV.merge("GOOGLE_SERVICE_ACCOUNT_KEY_FILE" => "/nowhere/robot.json", "GOOGLE_CALENDAR_ID" => "me@example.com")
 

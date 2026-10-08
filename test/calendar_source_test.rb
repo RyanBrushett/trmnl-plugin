@@ -7,7 +7,7 @@ class CalendarSourceTest < Minitest::Test
   LOCAL_TIME = Time.new(2026, 9, 29, 14, 30, 0, SVALBARD_OFFSET)
 
   def setup
-    @source = CalendarSource.new(service: Google::Apis::CalendarV3::CalendarService.new, calendar_id: CALENDAR_ID)
+    @source = CalendarSource.new(service: Google::Apis::CalendarV3::CalendarService.new, calendar_ids: [CALENDAR_ID])
   end
 
   def timed(summary, from, to, **extra)
@@ -58,10 +58,14 @@ class CalendarSourceTest < Minitest::Test
     assert_empty body.dig("merge_variables", "events")
   end
 
-  def test_an_untitled_event_has_a_nil_title_for_the_payload_to_name
+  def test_an_event_with_no_title_is_called_busy
     event = fetched([{"status" => "confirmed", "start" => {"dateTime" => "2026-09-29T15:00:00+02:00"}, "end" => {"dateTime" => "2026-09-29T16:00:00+02:00"}}]).first
 
-    assert_nil event.title
+    assert_equal "Busy", event.title
+  end
+
+  def test_a_blank_title_is_called_busy
+    assert_equal ["Busy"], fetched([timed("  ", "2026-09-29T15:00:00+02:00", "2026-09-29T16:00:00+02:00")]).map(&:title)
   end
 
   def test_hides_events_i_have_declined
@@ -150,5 +154,59 @@ class CalendarSourceTest < Minitest::Test
     stub_request(:get, URL).with(query: hash_including({})).to_return(status: 503, body: "{}", headers: {"Content-Type" => "application/json"})
 
     assert_raises(CalendarSource::Error) { @source.events(local_time: LOCAL_TIME) }
+  end
+
+  class TwoCalendars < Minitest::Test
+    MINE = "me@example.com"
+    WORK = "me@work.example"
+    LOCAL_TIME = Time.new(2026, 9, 29, 14, 30, 0, SVALBARD_OFFSET)
+    JSON_HEADERS = {"Content-Type" => "application/json"}.freeze
+
+    def setup
+      @source = CalendarSource.new(service: Google::Apis::CalendarV3::CalendarService.new, calendar_ids: [MINE, WORK])
+    end
+
+    def url(calendar_id) = "https://www.googleapis.com/calendar/v3/calendars/#{calendar_id}/events"
+
+    def stub_calendar(calendar_id, items, status: 200)
+      stub_request(:get, url(calendar_id)).with(query: hash_including({})).to_return(
+        status: status, body: {"items" => items}.to_json, headers: JSON_HEADERS
+      )
+    end
+
+    def timed(summary, hour, **extra)
+      {"status" => "confirmed", "summary" => summary,
+       "start" => {"dateTime" => "2026-09-29T#{hour}:00:00+02:00"}, "end" => {"dateTime" => "2026-09-29T#{hour + 1}:00:00+02:00"}}.merge(extra)
+    end
+
+    def test_combines_events_from_every_calendar_in_start_order
+      stub_calendar(MINE, [timed("Dentist", 17)])
+      stub_calendar(WORK, [timed("Standup", 15)])
+
+      assert_equal %w[Standup Dentist], @source.events(local_time: LOCAL_TIME).map(&:title)
+    end
+
+    def test_a_declined_event_is_judged_against_the_calendar_it_came_from
+      declined_by_work = timed("Skipped", 15, "attendees" => [{"email" => WORK, "responseStatus" => "declined"}])
+      declined_by_work_on_mine = timed("Kept", 16, "attendees" => [{"email" => WORK, "responseStatus" => "declined"}])
+      stub_calendar(WORK, [declined_by_work])
+      stub_calendar(MINE, [declined_by_work_on_mine])
+
+      assert_equal ["Kept"], @source.events(local_time: LOCAL_TIME).map(&:title)
+    end
+
+    def test_a_free_busy_calendar_shows_as_busy
+      stub_calendar(MINE, [])
+      stub_calendar(WORK, [{"status" => "confirmed", "start" => {"dateTime" => "2026-09-29T15:00:00+02:00"}, "end" => {"dateTime" => "2026-09-29T16:00:00+02:00"}}])
+
+      assert_equal ["Busy"], @source.events(local_time: LOCAL_TIME).map(&:title)
+    end
+
+    def test_one_calendar_failing_fails_the_whole_read
+      stub_calendar(MINE, [timed("Dentist", 17)])
+      stub_calendar(WORK, [], status: 404)
+
+      assert_raises(CalendarSource::Error) { @source.events(local_time: LOCAL_TIME) }
+    end
   end
 end

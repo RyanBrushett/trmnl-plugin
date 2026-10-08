@@ -13,6 +13,7 @@ class CalendarSource
   TIMEOUT_SECONDS = 10
   DECLINED = "declined"
   CANCELLED = "cancelled"
+  BUSY_TITLE = "Busy"
   GOOGLE_ERRORS = [Google::Apis::Error, Signet::AuthorizationError].freeze
 
   KEY_FILE_ERRORS = [SystemCallError, JSON::JSONError, Google::Auth::Error, OpenSSL::OpenSSLError].freeze
@@ -28,10 +29,10 @@ class CalendarSource
   def self.from_config(config)
     return Missing.new unless config.google?
 
-    from_service_account(key_file: config.google_key_file, calendar_id: config.google_calendar_id)
+    from_service_account(key_file: config.google_key_file, calendar_ids: config.google_calendar_ids)
   end
 
-  def self.from_service_account(key_file:, calendar_id:)
+  def self.from_service_account(key_file:, calendar_ids:)
     path = File.expand_path(key_file)
     credentials = File.open(path) do |key|
       Google::Auth::ServiceAccountCredentials.make_creds(json_key_io: key, scope: SCOPE)
@@ -41,7 +42,7 @@ class CalendarSource
     service.client_options.open_timeout_sec = TIMEOUT_SECONDS
     service.client_options.read_timeout_sec = TIMEOUT_SECONDS
     service.authorization = credentials
-    new(service: service, calendar_id: calendar_id)
+    new(service: service, calendar_ids: calendar_ids)
   rescue *KEY_FILE_ERRORS => e
     raise Error, "cannot use the service account key #{File.basename(path)} (#{key_error_detail(e)})"
   end
@@ -55,28 +56,35 @@ class CalendarSource
   end
   private_class_method :key_error_detail
 
-  def initialize(service:, calendar_id:)
+  def initialize(service:, calendar_ids:)
     @service = service
-    @calendar_id = calendar_id
+    @calendar_ids = calendar_ids
   end
 
   # Covers today and tomorrow, because Payload decides which of the two to show.
   def events(local_time:)
     first_day = local_time.to_date
-    google_events = fetch(midnight_of(first_day), midnight_of(first_day + 2))
+    time_min = midnight_of(first_day)
+    time_max = midnight_of(first_day + 2)
 
-    google_events.reject { |event| cancelled?(event) || declined_by_me?(event) }.map { |event| to_event(event) }
+    # Any one calendar failing fails the lot: a screen missing a calendar
+    # could look free when it is not.
+    @calendar_ids.flat_map do |calendar_id|
+      fetch(calendar_id, time_min, time_max)
+        .reject { |event| cancelled?(event) || declined_by_me?(event, calendar_id) }
+        .map { |event| to_event(event) }
+    end.sort_by { |event| [event.starts_at, event.ends_at] }
   end
 
   private
 
-  def fetch(time_min, time_max)
+  def fetch(calendar_id, time_min, time_max)
     collected = []
     page_token = nil
 
     loop do
       page = @service.list_events(
-        @calendar_id,
+        calendar_id,
         single_events: true, order_by: "startTime", max_results: PAGE_SIZE,
         time_min: time_min.iso8601, time_max: time_max.iso8601, page_token: page_token
       )
@@ -90,23 +98,28 @@ class CalendarSource
 
   def cancelled?(event) = event.status == CANCELLED
 
-  def declined_by_me?(event)
-    event.attendees.to_a.any? { |attendee| attendee.response_status == DECLINED && mine?(attendee) }
+  def declined_by_me?(event, calendar_id)
+    event.attendees.to_a.any? { |attendee| attendee.response_status == DECLINED && mine?(attendee, calendar_id) }
   end
 
   # A service account is not an attendee, so Google's "self" flag never marks
   # the owner. The calendar's own address does.
-  def mine?(attendee)
-    attendee.email.to_s.casecmp?(@calendar_id)
+  def mine?(attendee, calendar_id)
+    attendee.email.to_s.casecmp?(calendar_id)
   end
 
   def to_event(event)
     Payload::Event.new(
-      title: event.summary,
+      title: title_of(event),
       starts_at: moment(event.start),
       ends_at: moment(event.end),
       all_day: event.start.date_time.nil?
     )
+  end
+
+  # A calendar shared as free/busy only gives events no title at all.
+  def title_of(event)
+    event.summary.to_s.strip.empty? ? BUSY_TITLE : event.summary
   end
 
   def moment(event_time)

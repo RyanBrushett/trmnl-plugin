@@ -118,14 +118,32 @@ class ConfigTest < Minitest::Test
   def test_google_settings_are_optional
     config = Config.from_env(ENV_VARS)
 
-    assert_equal [false, nil, nil], [config.google?, config.google_key_file, config.google_calendar_id]
+    assert_equal [false, nil, nil], [config.google?, config.google_key_file, config.google_calendar_ids]
   end
 
   def test_reads_the_service_account_settings
     config = Config.from_env(ENV_VARS.merge(SERVICE_ACCOUNT_VARS))
 
-    assert_equal [true, "/keys/robot.json", "me@example.com"],
-      [config.google?, config.google_key_file, config.google_calendar_id]
+    assert_equal [true, "/keys/robot.json", ["me@example.com"]],
+      [config.google?, config.google_key_file, config.google_calendar_ids]
+  end
+
+  def test_calendar_ids_are_a_comma_separated_list
+    config = Config.from_env(ENV_VARS.merge(SERVICE_ACCOUNT_VARS.merge("GOOGLE_CALENDAR_ID" => " me@example.com ,, me@work.example,")))
+
+    assert_equal %w[me@example.com me@work.example], config.google_calendar_ids
+  end
+
+  def test_a_list_of_only_commas_counts_as_a_missing_calendar_id
+    error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge(SERVICE_ACCOUNT_VARS.merge("GOOGLE_CALENDAR_ID" => " , "))) }
+
+    assert_equal "incomplete Google service account settings, missing: GOOGLE_CALENDAR_ID", error.message
+  end
+
+  def test_primary_is_rejected_anywhere_in_the_list
+    error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge(SERVICE_ACCOUNT_VARS.merge("GOOGLE_CALENDAR_ID" => "me@example.com,primary"))) }
+
+    assert_match(/must list calendar email addresses/, error.message)
   end
 
   def test_a_half_filled_pair_names_the_missing_calendar_id
@@ -155,7 +173,7 @@ class ConfigTest < Minitest::Test
   def test_primary_is_not_a_valid_calendar_for_a_service_account
     error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge(SERVICE_ACCOUNT_VARS.merge("GOOGLE_CALENDAR_ID" => "Primary"))) }
 
-    assert_match(/must be the calendar's email address/, error.message)
+    assert_match(/must list calendar email addresses/, error.message)
   end
 
   def test_rejects_a_webhook_uuid_that_is_not_url_safe

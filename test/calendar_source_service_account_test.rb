@@ -49,7 +49,7 @@ class CalendarSourceServiceAccountTest < Minitest::Test
   end
 
   def source(calendar_id: CALENDAR)
-    CalendarSource.from_service_account(key_file: @key_file.path, calendar_id: calendar_id)
+    CalendarSource.from_service_account(key_file: @key_file.path, calendar_ids: [calendar_id])
   end
 
   def test_reads_events_using_the_token_the_key_earns
@@ -105,7 +105,7 @@ class CalendarSourceServiceAccountTest < Minitest::Test
 
   def test_a_missing_key_file_is_a_clear_error_that_does_not_leak_the_path
     error = assert_raises(CalendarSource::Error) do
-      CalendarSource.from_service_account(key_file: "/some/private/dir/robot.json", calendar_id: CALENDAR)
+      CalendarSource.from_service_account(key_file: "/some/private/dir/robot.json", calendar_ids: [CALENDAR])
     end
 
     assert_equal "cannot use the service account key robot.json (ENOENT)", error.message

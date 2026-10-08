@@ -49,14 +49,14 @@ Copy the UUID from its webhook URL into `.env`.
 
 ## Google Calendar
 
-Reads one calendar, read-only, and hides events you have declined. Without these settings the screen shows an error saying so, rather than an empty day (use `--sample-events` to see made-up events instead).
+Reads one or more calendars, read-only, merges them, and hides events you have declined. Without these settings the screen shows an error saying so, rather than an empty day (use `--sample-events` to see made-up events instead).
 
 It signs in as a service account: a robot identity with its own key, so there is no consent screen and nothing to renew.
 
 1. In Google Cloud, create a project, enable the Google Calendar API, and create a service account (it needs no project roles).
 2. Create a JSON key for it and keep the file somewhere private, outside the repo.
 3. In Google Calendar, share your calendar with the service account's email address, with the permission "See all event details".
-4. In `.env`, set `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` to the key file's absolute path, and `GOOGLE_CALENDAR_ID` to the calendar's email address. A service account's own "primary" calendar is empty, so `primary` is rejected.
+4. In `.env`, set `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` to the key file's absolute path, and `GOOGLE_CALENDAR_ID` to the calendar's email address. For several calendars, share each with the service account and list them separated by commas. A calendar shared as free/busy only works too: its events show as "Busy". A service account's own "primary" calendar is empty, so `primary` is rejected.
 5. `bin/push --dry-run` should now list your real events.
 
 ## Running on Google Cloud
