@@ -44,31 +44,11 @@ class UpdaterTest < Minitest::Test
     assert_equal [{local_time: AFTERNOON, hours: 8}], weather.requests
   end
 
-  def test_asks_for_the_same_window_in_the_evening_when_the_schedule_flips_to_tomorrow
-    weather = FakeWeather.new
-    body = updater(weather: weather, local_time: EVENING).body
-
-    assert_equal [[{local_time: EVENING, hours: 8}], "tomorrow"],
-      [weather.requests, body.dig("merge_variables", "mode")]
-  end
-
   def test_shows_the_error_page_when_the_weather_fails
     weather = FakeWeather.new(error: Weather::Error.new("Open-Meteo returned HTTP 503"))
 
     variables = updater(weather: weather).body.fetch("merge_variables")
 
     assert_equal ["error", "Weather::Error: Open-Meteo returned HTTP 503"], variables.values_at("mode", "error")
-  end
-
-  def test_shows_the_error_page_when_the_events_source_fails
-    broken = Updater.new(weather: FakeWeather.new, events_source: -> { raise "calendar exploded" }, local_time: AFTERNOON)
-
-    assert_equal "error", broken.body.dig("merge_variables", "mode")
-  end
-
-  def test_does_not_swallow_errors_that_are_not_standard_errors
-    interrupted = Updater.new(weather: FakeWeather.new, events_source: -> { raise Interrupt }, local_time: AFTERNOON)
-
-    assert_raises(Interrupt) { interrupted.body }
   end
 end

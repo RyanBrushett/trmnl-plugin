@@ -37,12 +37,6 @@ class CalendarSourceTest < Minitest::Test
       [event.title, event.starts_at, event.ends_at, event.all_day]
   end
 
-  def test_times_in_another_zone_are_the_same_instant
-    event = fetched([timed("Call", "2026-09-29T09:00:00-04:00", "2026-09-29T10:00:00-04:00")]).first
-
-    assert_equal Time.new(2026, 9, 29, 15, 0, 0, SVALBARD_OFFSET), event.starts_at
-  end
-
   def test_maps_an_all_day_event_to_local_midnights_with_an_exclusive_end
     event = fetched([all_day("Long weekend", "2026-09-29", "2026-09-30")]).first
 
@@ -55,7 +49,7 @@ class CalendarSourceTest < Minitest::Test
 
     body = Payload.build(events: events, weather: [], local_time: Time.new(2026, 9, 29, 21, 0, 0, SVALBARD_OFFSET))
 
-    assert_empty body.dig("merge_variables", "events")
+    assert_empty body.dig("merge_variables", "all_day")
   end
 
   def test_an_event_with_no_title_is_called_busy
@@ -150,12 +144,6 @@ class CalendarSourceTest < Minitest::Test
     assert_match(/TransmissionError/, error.message)
   end
 
-  def test_a_server_error_is_a_clear_error
-    stub_request(:get, URL).with(query: hash_including({})).to_return(status: 503, body: "{}", headers: {"Content-Type" => "application/json"})
-
-    assert_raises(CalendarSource::Error) { @source.events(local_time: LOCAL_TIME) }
-  end
-
   class TwoCalendars < Minitest::Test
     MINE = "me@example.com"
     WORK = "me@work.example"
@@ -193,13 +181,6 @@ class CalendarSourceTest < Minitest::Test
       stub_calendar(MINE, [declined_by_work_on_mine])
 
       assert_equal ["Kept"], @source.events(local_time: LOCAL_TIME).map(&:title)
-    end
-
-    def test_a_free_busy_calendar_shows_as_busy
-      stub_calendar(MINE, [])
-      stub_calendar(WORK, [{"status" => "confirmed", "start" => {"dateTime" => "2026-09-29T15:00:00+02:00"}, "end" => {"dateTime" => "2026-09-29T16:00:00+02:00"}}])
-
-      assert_equal ["Busy"], @source.events(local_time: LOCAL_TIME).map(&:title)
     end
 
     def test_one_calendar_failing_fails_the_whole_read

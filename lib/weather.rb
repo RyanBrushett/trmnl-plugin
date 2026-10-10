@@ -29,7 +29,7 @@ class Weather
 
   # Rows are positional, [hour, temp_c, condition, pop_percent], because the
   # TRMNL template reads them by index.
-  def next_hours(local_time: Time.now, hours: 8)
+  def next_hours(local_time:, hours:)
     forecast = get
     hourly = forecast.fetch("hourly")
     current_hour = local_hour_label(local_time, forecast.fetch("utc_offset_seconds"))

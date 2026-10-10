@@ -2,19 +2,13 @@ require "date"
 require "json"
 
 class Payload
-  Event = Struct.new(:starts_at, :ends_at, :title, :work, :all_day)
+  Event = Struct.new(:starts_at, :ends_at, :title, :all_day)
 
   WEBHOOK_LIMIT_BYTES = 2000
   EVENING_HOUR = 20
   MAX_EVENTS = 8
   MAX_TITLE_LENGTH = 60
-  WORK_EVENT_TITLE = "Meeting"
-  UNTITLED_EVENT_TITLE = "(No title)"
   MINUTES_PER_DAY = 1440
-
-  def self.mode(local_time)
-    (local_time.hour >= EVENING_HOUR) ? "tomorrow" : "today"
-  end
 
   def self.truncate(text, max_length)
     return text if text.length <= max_length
@@ -34,14 +28,18 @@ class Payload
   end
 
   def build
-    rows = event_rows.first(MAX_EVENTS)
-    rows.pop while rows.any? && too_big?(body_with(rows))
-    body_with(rows)
+    all_day, timed = shown_rows
+    all_day = all_day.first(MAX_EVENTS)
+    timed = timed.first(MAX_EVENTS - all_day.size)
+    shrink(all_day, timed) while (all_day.any? || timed.any?) && too_big?(body_with(all_day, timed))
+    body_with(all_day, timed)
   end
 
   private
 
-  def tomorrow? = self.class.mode(@local_time) == "tomorrow"
+  def mode = (@local_time.hour >= EVENING_HOUR) ? "tomorrow" : "today"
+
+  def tomorrow? = mode == "tomorrow"
 
   def day = tomorrow? ? @local_time.to_date + 1 : @local_time.to_date
 
@@ -55,22 +53,34 @@ class Payload
     body.to_json.bytesize > @max_bytes
   end
 
-  def body_with(event_rows)
+  # Drops from the end of the screen: timed rows first, then all-day titles.
+  def shrink(all_day, timed)
+    timed.any? ? timed.pop : all_day.pop
+  end
+
+  def body_with(all_day, timed)
     {
       "merge_variables" => {
-        "mode" => self.class.mode(@local_time),
+        "mode" => mode,
         "date" => day.iso8601,
         "today" => @local_time.to_date.iso8601,
-        "events" => event_rows,
+        "all_day" => all_day,
+        "events" => timed,
         "weather" => @weather
       }
     }
   end
 
-  def event_rows
+  # All-day titles are a plain list, and timed events are [start_minute,
+  # end_minute, title] rows read by index. A null in a row can be stripped on
+  # its way to the template, which shifts every position, so no row has one.
+  def shown_rows
     shown = @events.select { |event| on_day?(event) && !already_over?(event) }
-    shown.sort_by { |event| [event.all_day ? 0 : 1, event.starts_at, event.ends_at] }
-      .map { |event| row(event) }
+    all_day, timed = shown.partition(&:all_day)
+    [
+      all_day.sort_by { |event| [event.starts_at, event.ends_at] }.map { |event| title_of(event) },
+      timed.sort_by { |event| [event.starts_at, event.ends_at] }.map { |event| row(event) }
+    ]
   end
 
   def on_day?(event)
@@ -81,19 +91,12 @@ class Payload
     !tomorrow? && !event.all_day && event.ends_at <= @local_time
   end
 
-  # Rows are positional, [start_minute, end_minute, title], because the TRMNL
-  # template reads them by index. All-day events have no minutes.
   def row(event)
-    return [nil, nil, title_of(event)] if event.all_day
-
     [minutes_into_day(event.starts_at), minutes_into_day(event.ends_at), title_of(event)]
   end
 
   def title_of(event)
-    return WORK_EVENT_TITLE if event.work
-
-    title = event.title.to_s.strip
-    self.class.truncate(title.empty? ? UNTITLED_EVENT_TITLE : title, MAX_TITLE_LENGTH)
+    self.class.truncate(event.title.strip, MAX_TITLE_LENGTH)
   end
 
   # Wall-clock minutes in the process time zone, not elapsed time: on the two

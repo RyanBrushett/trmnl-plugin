@@ -10,7 +10,7 @@ module SampleEvents
 
     [
       Payload::Event.new(title: "Long weekend", starts_at: at.call(0), ends_at: at.call(23, 59), all_day: true),
-      Payload::Event.new(title: "Standup", starts_at: at.call(9, 30), ends_at: at.call(9, 45), work: true),
+      Payload::Event.new(title: "Busy", starts_at: at.call(9, 30), ends_at: at.call(9, 45)),
       Payload::Event.new(title: "Dentist", starts_at: at.call(15), ends_at: at.call(16)),
       Payload::Event.new(title: "Ride with Sam", starts_at: at.call(17, 30), ends_at: at.call(19)),
       Payload::Event.new(title: "Dinner at the pub", starts_at: at.call(19), ends_at: at.call(21, 30))

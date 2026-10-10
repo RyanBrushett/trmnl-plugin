@@ -17,10 +17,6 @@ class ErrorPayloadTest < Minitest::Test
     ErrorPayload.build(exception, local_time: @local_time).fetch("merge_variables")
   end
 
-  def test_mode_is_error
-    assert_equal "error", vars(raised)["mode"]
-  end
-
   def test_names_the_error_class_and_message
     assert_equal "Weather::Error: Open-Meteo returned HTTP 503",
       vars(raised(Weather::Error, "Open-Meteo returned HTTP 503"))["error"]

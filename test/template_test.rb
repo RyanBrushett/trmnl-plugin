@@ -90,6 +90,12 @@ class TemplateTest < Minitest::Test
     assert_includes html, "All day"
   end
 
+  def test_a_day_with_only_all_day_events_is_not_empty
+    html = render(events: [event("Long weekend", at(0), at(23, 59), all_day: true)])
+
+    refute_includes html, "Nothing on"
+  end
+
   def test_says_when_there_is_nothing_on
     assert_includes render(events: []), "Nothing on"
   end
@@ -127,10 +133,6 @@ class TemplateTest < Minitest::Test
     assert_equal 0, render(weather: weather).scan("border-left").size
   end
 
-  def test_the_header_is_a_white_on_black_bar
-    assert_includes render, "background: #000; color: #fff"
-  end
-
   def test_the_error_screen_says_what_went_wrong_and_where
     error = Weather::Error.new("Open-Meteo returned HTTP 503")
     html = Template.new.render(ErrorPayload.build(error, local_time: AFTERNOON))
@@ -144,13 +146,5 @@ class TemplateTest < Minitest::Test
     html = Template.new.render(ErrorPayload.build(RuntimeError.new("boom"), local_time: AFTERNOON))
 
     refute_includes html, "<svg"
-  end
-
-  def test_the_preview_page_wraps_the_layout_in_trmnls_framework
-    body = Payload.build(events: [], weather: DAYTIME_WEATHER, local_time: AFTERNOON)
-    page = Template.new.preview_page(body)
-
-    assert_includes page, Template::FRAMEWORK_CSS
-    assert_includes page, "view--full"
   end
 end

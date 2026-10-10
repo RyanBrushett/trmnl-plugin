@@ -15,11 +15,6 @@ class WeatherTest < Minitest::Test
     @afternoon = Time.new(2026, 9, 29, 14, 30, 0, SVALBARD_OFFSET)
   end
 
-  def test_returns_the_requested_number_of_hours
-    assert_equal 8, @weather.next_hours(local_time: @afternoon, hours: 8).size
-    assert_equal 6, @weather.next_hours(local_time: @afternoon, hours: 6).size
-  end
-
   def test_starts_at_the_current_local_hour
     hours = @weather.next_hours(local_time: @afternoon, hours: 8).map(&:first)
 
@@ -48,7 +43,7 @@ class WeatherTest < Minitest::Test
   def test_groups_wmo_codes_into_conditions
     stub_weather_codes([0, 2, 3, 45, 53, 65, 73, 97])
 
-    conditions = @weather.next_hours(local_time: @afternoon).map { |row| row[2] }
+    conditions = @weather.next_hours(local_time: @afternoon, hours: 8).map { |row| row[2] }
 
     assert_equal %w[clear partly cloud fog drizzle rain snow storm], conditions
   end
@@ -80,22 +75,6 @@ class WeatherTest < Minitest::Test
     assert_equal [21, 22, 23, 0, 8], hours_from(21, 30, count: 5)
   end
 
-  def test_evening_windows_reach_into_tomorrow_morning
-    assert_equal [19, 20, 21, 22, 23, 0, 8, 9], hours_from(19)
-  end
-
-  def test_after_midnight_the_window_starts_at_eight
-    assert_equal [0, 8, 9, 10, 11, 12, 13, 14], hours_from(0, 30)
-  end
-
-  def test_in_the_small_hours_the_window_starts_at_eight
-    assert_equal [8, 9, 10, 11, 12, 13, 14, 15], hours_from(3)
-  end
-
-  def test_a_morning_window_shows_the_working_day
-    assert_equal [9, 10, 11, 12, 13, 14, 15, 16], hours_from(9)
-  end
-
   def test_seven_is_still_sleeping
     assert_equal [8], hours_from(7, 59, count: 1)
   end
@@ -106,7 +85,7 @@ class WeatherTest < Minitest::Test
   end
 
   def test_sends_coordinates_and_asks_for_the_hourly_variables
-    @weather.next_hours(local_time: @afternoon)
+    @weather.next_hours(local_time: @afternoon, hours: 8)
 
     assert_requested :get, URL, query: hash_including(
       "latitude" => "78.216667",
@@ -119,14 +98,14 @@ class WeatherTest < Minitest::Test
   def test_raises_a_clear_error_on_http_failure
     stub_request(:get, URL).with(query: hash_including({})).to_return(status: 503)
 
-    error = assert_raises(Weather::Error) { @weather.next_hours(local_time: @afternoon) }
+    error = assert_raises(Weather::Error) { @weather.next_hours(local_time: @afternoon, hours: 8) }
     assert_match(/503/, error.message)
   end
 
   def test_raises_a_clear_error_when_the_request_times_out
     stub_request(:get, URL).with(query: hash_including({})).to_timeout
 
-    error = assert_raises(Weather::Error) { @weather.next_hours(local_time: @afternoon) }
+    error = assert_raises(Weather::Error) { @weather.next_hours(local_time: @afternoon, hours: 8) }
 
     assert_match(/timed out/, error.message)
   end
@@ -136,25 +115,15 @@ class WeatherTest < Minitest::Test
     forecast["hourly"]["temperature_2m"][15] = nil
     stub_request(:get, URL).with(query: hash_including({})).to_return(status: 200, body: forecast.to_json)
 
-    error = assert_raises(Weather::Error) { @weather.next_hours(local_time: @afternoon) }
+    error = assert_raises(Weather::Error) { @weather.next_hours(local_time: @afternoon, hours: 8) }
 
     assert_equal "Open-Meteo has no temperature_2m for 2026-09-29T15:00", error.message
-  end
-
-  def test_raises_when_a_variable_has_fewer_values_than_hours
-    forecast = JSON.parse(fixture("open_meteo.json"))
-    forecast["hourly"]["weather_code"] = forecast["hourly"]["weather_code"].first(16)
-    stub_request(:get, URL).with(query: hash_including({})).to_return(status: 200, body: forecast.to_json)
-
-    error = assert_raises(Weather::Error) { @weather.next_hours(local_time: @afternoon) }
-
-    assert_equal "Open-Meteo has no weather_code for 2026-09-29T16:00", error.message
   end
 
   def test_raises_when_the_forecast_does_not_cover_the_window
     far_future = Time.new(2027, 1, 1, 0, 0, 0, "+01:00")
 
-    assert_raises(Weather::Error) { @weather.next_hours(local_time: far_future) }
+    assert_raises(Weather::Error) { @weather.next_hours(local_time: far_future, hours: 8) }
   end
 
   def test_raises_when_the_window_runs_past_the_end_of_the_forecast

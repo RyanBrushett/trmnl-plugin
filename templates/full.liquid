@@ -5,15 +5,14 @@
   {% render "header", mode: mode, date: date, today: today %}
 
   <div style="flex: 1; width: 100%; overflow: hidden;">
-    {% if events.size == 0 %}
+    {% if events.size == 0 and all_day.size == 0 %}
       <div class="item"><div class="content"><span class="text--base">Nothing on</span></div></div>
     {% endif %}
+    {% for title in all_day %}
+      {% render "event_row", time_range: "All day", title: title %}
+    {% endfor %}
     {% for event in events %}
-      {% if event[0] == nil %}
-        {% assign time_range = "All day" %}
-      {% else %}
-        {% capture time_range %}{% render "clock", minutes: event[0] %}–{% render "clock", minutes: event[1] %}{% endcapture %}
-      {% endif %}
+      {% capture time_range %}{% render "clock", minutes: event[0] %}–{% render "clock", minutes: event[1] %}{% endcapture %}
       {% render "event_row", time_range: time_range, title: event[2] %}
     {% endfor %}
   </div>

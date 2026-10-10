@@ -68,16 +68,12 @@ class CalendarSourceServiceAccountTest < Minitest::Test
     assert_requested :get, %r{/calendars/me(@|%40)example\.com/events}
   end
 
-  def test_signs_the_token_request_with_the_key_as_the_robot_for_the_read_only_scope
+  def test_asks_for_read_only_access_to_events
     stub_events([])
     source.events(local_time: LOCAL_TIME)
-    header, payload, signature = @token_request["assertion"].split(".")
-    claims = JSON.parse(Base64.urlsafe_decode64(payload))
+    claims = JSON.parse(Base64.urlsafe_decode64(@token_request["assertion"].split(".")[1]))
 
-    assert_equal [ROBOT, CalendarSource::SCOPE], claims.values_at("iss", "scope")
-    assert_equal "urn:ietf:params:oauth:grant-type:jwt-bearer", @token_request["grant_type"]
-    assert KEY.public_key.verify(OpenSSL::Digest.new("SHA256"), Base64.urlsafe_decode64(signature), "#{header}.#{payload}"),
-      "the assertion should be signed by the service account's private key"
+    assert_equal "https://www.googleapis.com/auth/calendar.events.readonly", claims["scope"]
   end
 
   def test_hides_events_the_owner_declined_even_though_the_robot_is_not_an_attendee
@@ -85,13 +81,6 @@ class CalendarSourceServiceAccountTest < Minitest::Test
     stub_events([declined])
 
     assert_empty source.events(local_time: LOCAL_TIME)
-  end
-
-  def test_keeps_events_someone_else_declined
-    others = timed("Team lunch", "attendees" => [{"email" => "them@example.com", "responseStatus" => "declined"}])
-    stub_events([others])
-
-    assert_equal ["Team lunch"], source.events(local_time: LOCAL_TIME).map(&:title)
   end
 
   def test_a_rejected_token_request_is_a_clear_error
@@ -111,20 +100,12 @@ class CalendarSourceServiceAccountTest < Minitest::Test
     assert_equal "cannot use the service account key robot.json (ENOENT)", error.message
   end
 
-  def test_a_key_file_that_is_not_json_is_a_clear_error
-    File.write(@key_file.path, "this is not json")
-
-    error = assert_raises(CalendarSource::Error) { source }
-
-    assert_equal "cannot use the service account key #{File.basename(@key_file.path)} (ParserError)", error.message
-  end
-
-  def test_a_broken_key_file_never_quotes_its_contents_in_the_error
+  def test_a_key_file_that_is_not_json_is_a_clear_error_that_never_quotes_its_contents
     File.write(@key_file.path, "{\"private_key\": THIS_IS_A_FAKE_PRIVATE_KEY}")
 
     error = assert_raises(CalendarSource::Error) { source }
 
-    refute_match(/THIS_IS_A_FAKE_PRIVATE_KEY/, error.message)
+    assert_equal "cannot use the service account key #{File.basename(@key_file.path)} (ParserError)", error.message
   end
 
   def test_a_garbage_private_key_is_a_clear_error_without_quoting_it

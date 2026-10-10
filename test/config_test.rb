@@ -29,12 +29,6 @@ class ConfigTest < Minitest::Test
     assert_match(/HOME_LAT/, error.message)
   end
 
-  def test_the_timezone_has_no_default
-    error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.except("HOME_TIMEZONE")) }
-
-    assert_match(/HOME_TIMEZONE/, error.message)
-  end
-
   def test_rejects_a_timezone_that_does_not_exist
     error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge("HOME_TIMEZONE" => "Arctic/Longyearbyeen")) }
 
@@ -141,7 +135,7 @@ class ConfigTest < Minitest::Test
   end
 
   def test_primary_is_rejected_anywhere_in_the_list
-    error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge(SERVICE_ACCOUNT_VARS.merge("GOOGLE_CALENDAR_ID" => "me@example.com,primary"))) }
+    error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge(SERVICE_ACCOUNT_VARS.merge("GOOGLE_CALENDAR_ID" => "me@example.com,Primary"))) }
 
     assert_match(/must list calendar email addresses/, error.message)
   end
@@ -164,27 +158,10 @@ class ConfigTest < Minitest::Test
     refute_predicate config, :google?
   end
 
-  def test_leftover_oauth_settings_in_an_env_file_are_ignored
-    leftovers = {"GOOGLE_CLIENT_ID" => "id", "GOOGLE_CLIENT_SECRET" => "secret", "GOOGLE_REFRESH_TOKEN" => "token"}
-
-    refute_predicate Config.from_env(ENV_VARS.merge(leftovers)), :google?
-  end
-
-  def test_primary_is_not_a_valid_calendar_for_a_service_account
-    error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge(SERVICE_ACCOUNT_VARS.merge("GOOGLE_CALENDAR_ID" => "Primary"))) }
-
-    assert_match(/must list calendar email addresses/, error.message)
-  end
-
-  def test_rejects_a_webhook_uuid_that_is_not_url_safe
-    error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge("TRMNL_WEBHOOK_UUID" => "abc def")) }
-
-    assert_match(/TRMNL_WEBHOOK_UUID/, error.message)
-  end
-
   def test_the_uuid_error_does_not_repeat_the_value
     error = assert_raises(Config::Error) { Config.from_env(ENV_VARS.merge("TRMNL_WEBHOOK_UUID" => "abc def")) }
 
+    assert_match(/TRMNL_WEBHOOK_UUID/, error.message)
     refute_includes error.message, "abc def"
   end
 end

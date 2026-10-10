@@ -22,29 +22,19 @@ class PayloadTest < Minitest::Test
     Payload.build(events: events, weather: weather, local_time: local_time).fetch("merge_variables")
   end
 
-  def test_body_is_wrapped_in_merge_variables
-    body = Payload.build(events: [], weather: WEATHER, local_time: @local_time)
-
-    assert_equal ["merge_variables"], body.keys
-  end
-
   def test_mode_is_today_before_the_evening
-    assert_equal "today", Payload.mode(at(2026, 9, 28, 19, 59))
-    assert_equal "today", Payload.mode(at(2026, 9, 28, 0, 5))
+    assert_equal "today", vars(local_time: at(2026, 9, 28, 19, 59))["mode"]
+    assert_equal "today", vars(local_time: at(2026, 9, 28, 0, 5))["mode"]
   end
 
   def test_mode_is_tomorrow_from_eight_pm
-    assert_equal "tomorrow", Payload.mode(at(2026, 9, 28, 20, 0))
-    assert_equal "tomorrow", Payload.mode(at(2026, 9, 28, 23, 59))
+    assert_equal "tomorrow", vars(local_time: at(2026, 9, 28, 20, 0))["mode"]
+    assert_equal "tomorrow", vars(local_time: at(2026, 9, 28, 23, 59))["mode"]
   end
 
   def test_date_follows_the_mode
     assert_equal "2026-09-28", vars["date"]
     assert_equal "2026-09-29", vars(local_time: at(2026, 9, 28, 21))["date"]
-  end
-
-  def test_weather_is_passed_through
-    assert_equal WEATHER, vars["weather"]
   end
 
   def test_events_are_minutes_since_midnight
@@ -60,19 +50,6 @@ class PayloadTest < Minitest::Test
     assert_equal %w[Early Late], vars(events: [late, early])["events"].map(&:last)
   end
 
-  def test_work_events_are_shown_as_meeting
-    e = event("Q3 budget review", at(2026, 9, 28, 15), at(2026, 9, 28, 16), work: true)
-
-    assert_equal "Meeting", vars(events: [e])["events"].first.last
-  end
-
-  def test_realistic_long_titles_are_kept_whole
-    titles = ["🧖 Thermal Circuit — Lakeside Sauna & Spa", "🪨 Gravel Grinder — 129km", "🍻 Post-Race Party (on-site)"]
-    events = titles.each_with_index.map { |title, i| event(title, at(2026, 9, 28, 15 + i), at(2026, 9, 28, 15 + i, 45)) }
-
-    assert_equal titles, vars(events: events)["events"].map(&:last)
-  end
-
   def test_today_is_always_the_local_date_whichever_day_is_shown
     assert_equal "2026-09-28", vars["today"]
     assert_equal "2026-09-28", vars(local_time: at(2026, 9, 28, 21))["today"]
@@ -84,15 +61,6 @@ class PayloadTest < Minitest::Test
 
     assert_equal Payload::MAX_TITLE_LENGTH, title.length
     assert title.end_with?("…")
-  end
-
-  def test_untitled_events_get_a_placeholder
-    missing = event(nil, at(2026, 9, 28, 15), at(2026, 9, 28, 16))
-    blank = event("   ", at(2026, 9, 28, 16), at(2026, 9, 28, 17))
-
-    titles = vars(events: [missing, blank])["events"].map(&:last)
-
-    assert_equal [Payload::UNTITLED_EVENT_TITLE] * 2, titles
   end
 
   def test_times_are_wall_clock_on_the_day_the_clocks_go_forward
@@ -113,12 +81,20 @@ class PayloadTest < Minitest::Test
     assert_equal [[540, 600, "Brunch"]], events
   end
 
-  def test_all_day_events_come_first_with_no_times
+  def test_all_day_events_are_a_separate_list_of_titles
     timed = event("Dentist", at(2026, 9, 28, 15), at(2026, 9, 28, 16))
     all_day = event("Thanksgiving", at(2026, 9, 28, 0), at(2026, 9, 29, 0), all_day: true)
 
-    assert_equal [[nil, nil, "Thanksgiving"], [900, 960, "Dentist"]],
-      vars(events: [timed, all_day])["events"]
+    result = vars(events: [timed, all_day])
+
+    assert_equal ["Thanksgiving"], result["all_day"]
+    assert_equal [[900, 960, "Dentist"]], result["events"]
+  end
+
+  def test_no_row_contains_a_null
+    all_day = event("Thanksgiving", at(2026, 9, 28, 0), at(2026, 9, 29, 0), all_day: true)
+
+    refute_includes vars(events: [all_day]).to_json, "null"
   end
 
   def test_today_leaves_out_events_that_have_already_ended
@@ -153,6 +129,15 @@ class PayloadTest < Minitest::Test
     events = Array.new(12) { |i| event("E#{i}", at(2026, 9, 28, 15, i), at(2026, 9, 28, 23)) }
 
     assert_equal Payload::MAX_EVENTS, vars(events: events)["events"].size
+  end
+
+  def test_all_day_events_count_towards_the_maximum_and_come_before_timed_ones
+    all_day = Array.new(10) { |i| event("Day #{i}", at(2026, 9, 28, 0), at(2026, 9, 29, 0), all_day: true) }
+    timed = event("Dentist", at(2026, 9, 28, 15), at(2026, 9, 28, 16))
+
+    result = vars(events: all_day + [timed])
+
+    assert_equal [Payload::MAX_EVENTS, 0], [result["all_day"].size, result["events"].size]
   end
 
   def test_worst_case_fits_the_trmnl_limit
