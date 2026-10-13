@@ -22,13 +22,16 @@ class Weather
     "storm" => [95, 96, 97, 99]
   }.freeze
 
+  #: (Integer, Integer, String, Integer) -> Weather::HourForecast
+  HourForecast = Data.define(:hour_of_day, :temp_c, :condition, :pop_percent) do
+    def to_a = [hour_of_day, temp_c, condition, pop_percent]
+  end
+
   def initialize(lat:, lon:)
     @lat = lat
     @lon = lon
   end
 
-  # Rows are positional, [hour, temp_c, condition, pop_percent], because the
-  # TRMNL template reads them by index.
   def next_hours(local_time:, hours:)
     forecast = get
     hourly = forecast.fetch("hourly")
@@ -41,7 +44,7 @@ class Weather
     waking = (first...labels.size).reject { |index| sleeping?(labels[index]) }
     raise Error, "forecast too short for #{hours} waking hours from #{current_hour}" if waking.size < hours
 
-    waking.first(hours).map { |index| hour_row(hourly, index) }
+    waking.first(hours).map { |index| hour_forecast(hourly, index) }
   end
 
   private
@@ -50,13 +53,13 @@ class Weather
 
   def sleeping?(label) = SLEEPING_HOURS.cover?(hour_of(label))
 
-  def hour_row(hourly, index)
+  def hour_forecast(hourly, index)
     label = hourly["time"][index]
     temperature, code, pop = HOURLY_VARIABLES.map do |variable|
       hourly.fetch(variable, [])[index] || raise(Error, "Open-Meteo has no #{variable} for #{label}")
     end
 
-    [hour_of(label), temperature.round, condition_for(code), pop]
+    HourForecast.new(hour_of_day: hour_of(label), temp_c: temperature.round, condition: condition_for(code), pop_percent: pop)
   end
 
   def condition_for(code)

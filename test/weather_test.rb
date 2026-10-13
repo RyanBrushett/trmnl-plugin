@@ -16,22 +16,23 @@ class WeatherTest < Minitest::Test
   end
 
   def test_starts_at_the_current_local_hour
-    hours = @weather.next_hours(local_time: @afternoon, hours: 8).map(&:first)
+    hours = @weather.next_hours(local_time: @afternoon, hours: 8).map(&:hour_of_day)
 
     assert_equal [14, 15, 16, 17, 18, 19, 20, 21], hours
   end
 
   def test_works_out_local_hour_from_a_time_in_any_zone
     same_moment_elsewhere = Time.new(2026, 9, 29, 5, 30, 0, "-07:00")
-    hours = @weather.next_hours(local_time: same_moment_elsewhere, hours: 2).map(&:first)
+    hours = @weather.next_hours(local_time: same_moment_elsewhere, hours: 2).map(&:hour_of_day)
 
     assert_equal [14, 15], hours
   end
 
-  def test_each_entry_is_hour_temp_condition_and_pop
-    hour, temperature, condition, pop = @weather.next_hours(local_time: @afternoon, hours: 1).first
+  def test_each_hour_is_sent_as_hour_temp_condition_and_pop_in_that_order
+    wire_row = @weather.next_hours(local_time: @afternoon, hours: 1).first.to_a
 
-    assert_equal [Integer, Integer, String, Integer], [hour, temperature, condition, pop].map(&:class)
+    assert_equal [14, 2, "cloud", 20], wire_row
+    assert_equal [Integer, Integer, String, Integer], wire_row.map(&:class)
   end
 
   def stub_weather_codes(codes, from_index: 14)
@@ -43,7 +44,7 @@ class WeatherTest < Minitest::Test
   def test_groups_wmo_codes_into_conditions
     stub_weather_codes([0, 2, 3, 45, 53, 65, 73, 97])
 
-    conditions = @weather.next_hours(local_time: @afternoon, hours: 8).map { |row| row[2] }
+    conditions = @weather.next_hours(local_time: @afternoon, hours: 8).map(&:condition)
 
     assert_equal %w[clear partly cloud fog drizzle rain snow storm], conditions
   end
@@ -58,13 +59,13 @@ class WeatherTest < Minitest::Test
   def test_an_unrecognised_code_becomes_unknown
     stub_weather_codes([42])
 
-    assert_equal "unknown", @weather.next_hours(local_time: @afternoon, hours: 1).first[2]
+    assert_equal "unknown", @weather.next_hours(local_time: @afternoon, hours: 1).first.condition
   end
 
   def hours_from(hour, minute = 0, count: 8, day: 29)
     local_time = Time.new(2026, 9, day, hour, minute, 0, SVALBARD_OFFSET)
 
-    @weather.next_hours(local_time: local_time, hours: count).map(&:first)
+    @weather.next_hours(local_time: local_time, hours: count).map(&:hour_of_day)
   end
 
   def test_includes_midnight

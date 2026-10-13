@@ -22,9 +22,9 @@ class PayloadTest < Minitest::Test
     Payload.build(events: events, weather: weather, local_time: local_time).fetch("merge_variables")
   end
 
-  def titles_of(rows) = rows.map { |row| row[2] }
+  def titles_of(rows) = rows.map { |_start, _end, title, _finished| title }
 
-  def finished_flags_by_title(rows) = rows.to_h { |row| [row[2], row[Payload::FINISHED_COLUMN]] }
+  def finished_flags_by_title(rows) = rows.to_h { |_start, _end, title, finished| [title, finished] }
 
   def test_mode_is_today_before_the_evening
     assert_equal "today", vars(local_time: at(2026, 9, 28, 19, 59))["mode"]
@@ -61,7 +61,7 @@ class PayloadTest < Minitest::Test
 
   def test_long_titles_are_truncated
     e = event("A" * 100, at(2026, 9, 28, 15), at(2026, 9, 28, 16))
-    title = vars(events: [e])["events"].first[2]
+    title = titles_of(vars(events: [e])["events"]).first
 
     assert_equal Payload::MAX_TITLE_LENGTH, title.length
     assert title.end_with?("…")
@@ -191,6 +191,6 @@ class PayloadTest < Minitest::Test
 
     assert_operator kept.size, :<, 8
     assert_operator body.to_json.bytesize, :<=, 400
-    assert_equal "é" * (Payload::MAX_TITLE_LENGTH - 1) + "…", kept.first[2], "earliest events should survive"
+    assert_equal "é" * (Payload::MAX_TITLE_LENGTH - 1) + "…", titles_of(kept).first, "earliest events should survive"
   end
 end

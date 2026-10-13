@@ -4,14 +4,18 @@ require "json"
 class Payload
   Event = Struct.new(:starts_at, :ends_at, :title, :all_day)
 
+  #: (Integer, Integer, String, Bool) -> Payload::TimedEntry
+  TimedEntry = Data.define(:start_minutes_into_day, :end_minutes_into_day, :title, :finished) do
+    def finished? = !!finished
+    def to_a = [start_minutes_into_day, end_minutes_into_day, title, finished ? 1 : 0]
+  end
+  private_constant :TimedEntry
+
   WEBHOOK_LIMIT_BYTES = 2000
   EVENING_HOUR = 20
   MAX_EVENTS = 8
   MAX_TITLE_LENGTH = 60
   MINUTES_PER_DAY = 1440
-  FINISHED_COLUMN = 3
-  FINISHED = 1
-  UNFINISHED = 0
 
   def self.truncate(text, max_length)
     return text if text.length <= max_length
@@ -31,10 +35,10 @@ class Payload
   end
 
   def build
-    all_day, timed = shown_rows
+    all_day, timed = shown_all_day_and_timed
     all_day = all_day.first(MAX_EVENTS)
     room_for_timed = MAX_EVENTS - all_day.size
-    drop_least_useful_row(timed) while timed.size > room_for_timed
+    drop_least_useful_entry(timed) while timed.size > room_for_timed
     shrink(all_day, timed) while (all_day.any? || timed.any?) && too_big?(body_with(all_day, timed))
     body_with(all_day, timed)
   end
@@ -58,11 +62,11 @@ class Payload
   end
 
   def shrink(all_day, timed)
-    timed.any? ? drop_least_useful_row(timed) : all_day.pop
+    timed.any? ? drop_least_useful_entry(timed) : all_day.pop
   end
 
-  def drop_least_useful_row(timed)
-    oldest_finished = timed.index { |row| row[FINISHED_COLUMN] == FINISHED }
+  def drop_least_useful_entry(timed)
+    oldest_finished = timed.index(&:finished?)
     oldest_finished ? timed.delete_at(oldest_finished) : timed.pop
   end
 
@@ -73,22 +77,18 @@ class Payload
         "date" => day.iso8601,
         "today" => @local_time.to_date.iso8601,
         "all_day" => all_day,
-        "events" => timed,
-        "weather" => @weather
+        "events" => timed.map(&:to_a),
+        "weather" => @weather.map(&:to_a)
       }
     }
   end
 
-  # All-day titles are a plain list, and timed events are [start_minute,
-  # end_minute, title, finished] rows read by index. A null in a row can be
-  # stripped on its way to the template, which shifts every position, so no
-  # row has one.
-  def shown_rows
+  def shown_all_day_and_timed
     shown = @events.select { |event| on_day?(event) }
     all_day, timed = shown.partition(&:all_day)
     [
       all_day.sort_by { |event| [event.starts_at, event.ends_at] }.map { |event| title_of(event) },
-      timed.sort_by { |event| [event.starts_at, event.ends_at] }.map { |event| row(event) }
+      timed.sort_by { |event| [event.starts_at, event.ends_at] }.map { |event| timed_entry(event) }
     ]
   end
 
@@ -96,11 +96,14 @@ class Payload
     event.starts_at < day_end && event.ends_at > day_start
   end
 
-  def row(event)
-    [minutes_into_day(event.starts_at), minutes_into_day(event.ends_at), title_of(event), finished_flag(event)]
+  def timed_entry(event)
+    TimedEntry.new(
+      start_minutes_into_day: minutes_into_day(event.starts_at),
+      end_minutes_into_day: minutes_into_day(event.ends_at),
+      title: title_of(event),
+      finished: event.ends_at <= @local_time
+    )
   end
-
-  def finished_flag(event) = (event.ends_at <= @local_time) ? FINISHED : UNFINISHED
 
   def title_of(event)
     self.class.truncate(event.title.strip, MAX_TITLE_LENGTH)
