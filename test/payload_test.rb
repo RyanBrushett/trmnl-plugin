@@ -22,6 +22,10 @@ class PayloadTest < Minitest::Test
     Payload.build(events: events, weather: weather, local_time: local_time).fetch("merge_variables")
   end
 
+  def titles_of(rows) = rows.map { |row| row[2] }
+
+  def finished_flags_by_title(rows) = rows.to_h { |row| [row[2], row[Payload::FINISHED_COLUMN]] }
+
   def test_mode_is_today_before_the_evening
     assert_equal "today", vars(local_time: at(2026, 9, 28, 19, 59))["mode"]
     assert_equal "today", vars(local_time: at(2026, 9, 28, 0, 5))["mode"]
@@ -40,14 +44,14 @@ class PayloadTest < Minitest::Test
   def test_events_are_minutes_since_midnight
     e = event("Standup", at(2026, 9, 28, 15, 30), at(2026, 9, 28, 16))
 
-    assert_equal [[930, 960, "Standup"]], vars(events: [e])["events"]
+    assert_equal [[930, 960, "Standup", 0]], vars(events: [e])["events"]
   end
 
   def test_events_are_sorted_by_start_time
     late = event("Late", at(2026, 9, 28, 17), at(2026, 9, 28, 18))
     early = event("Early", at(2026, 9, 28, 15), at(2026, 9, 28, 16))
 
-    assert_equal %w[Early Late], vars(events: [late, early])["events"].map(&:last)
+    assert_equal %w[Early Late], titles_of(vars(events: [late, early])["events"])
   end
 
   def test_today_is_always_the_local_date_whichever_day_is_shown
@@ -57,7 +61,7 @@ class PayloadTest < Minitest::Test
 
   def test_long_titles_are_truncated
     e = event("A" * 100, at(2026, 9, 28, 15), at(2026, 9, 28, 16))
-    title = vars(events: [e])["events"].first.last
+    title = vars(events: [e])["events"].first[2]
 
     assert_equal Payload::MAX_TITLE_LENGTH, title.length
     assert title.end_with?("…")
@@ -69,7 +73,7 @@ class PayloadTest < Minitest::Test
 
     events = vars(events: [brunch], local_time: saturday_evening)["events"]
 
-    assert_equal [[540, 600, "Brunch"]], events
+    assert_equal [[540, 600, "Brunch", 0]], events
   end
 
   def test_times_are_wall_clock_on_the_day_the_clocks_go_back
@@ -78,7 +82,7 @@ class PayloadTest < Minitest::Test
 
     events = vars(events: [brunch], local_time: saturday_evening)["events"]
 
-    assert_equal [[540, 600, "Brunch"]], events
+    assert_equal [[540, 600, "Brunch", 0]], events
   end
 
   def test_all_day_events_are_a_separate_list_of_titles
@@ -88,7 +92,7 @@ class PayloadTest < Minitest::Test
     result = vars(events: [timed, all_day])
 
     assert_equal ["Thanksgiving"], result["all_day"]
-    assert_equal [[900, 960, "Dentist"]], result["events"]
+    assert_equal [[900, 960, "Dentist", 0]], result["events"]
   end
 
   def test_no_row_contains_a_null
@@ -97,11 +101,39 @@ class PayloadTest < Minitest::Test
     refute_includes vars(events: [all_day]).to_json, "null"
   end
 
-  def test_today_leaves_out_events_that_have_already_ended
+  def test_today_marks_events_that_have_already_ended_as_finished
     over = event("Breakfast", at(2026, 9, 28, 8), at(2026, 9, 28, 9))
     now_on = event("Lunch", at(2026, 9, 28, 14), at(2026, 9, 28, 15))
 
-    assert_equal ["Lunch"], vars(events: [over, now_on])["events"].map(&:last)
+    rows = vars(events: [over, now_on])["events"]
+
+    assert_equal({"Breakfast" => 1, "Lunch" => 0}, finished_flags_by_title(rows))
+  end
+
+  def test_an_event_ending_exactly_now_is_finished
+    ending = event("Standup", at(2026, 9, 28, 14), @local_time)
+
+    assert_equal({"Standup" => 1}, finished_flags_by_title(vars(events: [ending])["events"]))
+  end
+
+  def test_finished_events_are_dropped_before_upcoming_ones_when_there_are_too_many
+    over = Array.new(6) { |i| event("Over #{i}", at(2026, 9, 28, 8, i), at(2026, 9, 28, 9)) }
+    upcoming = Array.new(5) { |i| event("Next #{i}", at(2026, 9, 28, 15, i), at(2026, 9, 28, 16)) }
+
+    titles = titles_of(vars(events: over + upcoming)["events"])
+
+    assert_equal [*(3..5).map { |i| "Over #{i}" }, *(0..4).map { |i| "Next #{i}" }], titles
+  end
+
+  def test_finished_events_are_dropped_before_upcoming_ones_when_over_budget
+    over = event("é" * 100, at(2026, 9, 28, 8), at(2026, 9, 28, 9))
+    upcoming = event("Dentist", at(2026, 9, 28, 15), at(2026, 9, 28, 16))
+
+    room_for_only_upcoming = Payload.build(events: [upcoming], weather: WEATHER, local_time: @local_time).to_json.bytesize
+    body = Payload.build(events: [over, upcoming], weather: WEATHER, local_time: @local_time,
+      max_bytes: room_for_only_upcoming)
+
+    assert_equal [[900, 960, "Dentist", 0]], body["merge_variables"]["events"]
   end
 
   def test_tomorrow_includes_the_whole_day_and_ignores_today
@@ -110,7 +142,7 @@ class PayloadTest < Minitest::Test
 
     events = vars(events: [today, early], local_time: at(2026, 9, 28, 21))["events"]
 
-    assert_equal [[360, 420, "Early run"]], events
+    assert_equal [[360, 420, "Early run", 0]], events
   end
 
   def test_events_on_other_days_are_ignored
@@ -122,7 +154,7 @@ class PayloadTest < Minitest::Test
   def test_events_crossing_midnight_are_clipped_to_the_day
     late = event("Night shift", at(2026, 9, 28, 22), at(2026, 9, 29, 6))
 
-    assert_equal [[1320, 1440, "Night shift"]], vars(events: [late])["events"]
+    assert_equal [[1320, 1440, "Night shift", 0]], vars(events: [late])["events"]
   end
 
   def test_no_more_than_max_events
@@ -159,6 +191,6 @@ class PayloadTest < Minitest::Test
 
     assert_operator kept.size, :<, 8
     assert_operator body.to_json.bytesize, :<=, 400
-    assert_equal "é" * (Payload::MAX_TITLE_LENGTH - 1) + "…", kept.first.last, "earliest events should survive"
+    assert_equal "é" * (Payload::MAX_TITLE_LENGTH - 1) + "…", kept.first[2], "earliest events should survive"
   end
 end

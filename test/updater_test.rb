@@ -33,7 +33,7 @@ class UpdaterTest < Minitest::Test
 
     variables = updater(events: [event]).body.fetch("merge_variables")
 
-    assert_equal ["today", [[900, 960, "Dentist"]], [[14, 13, 3, 6]]],
+    assert_equal ["today", [[900, 960, "Dentist", 0]], [[14, 13, 3, 6]]],
       variables.values_at("mode", "events", "weather")
   end
 

@@ -9,6 +9,9 @@ class Payload
   MAX_EVENTS = 8
   MAX_TITLE_LENGTH = 60
   MINUTES_PER_DAY = 1440
+  FINISHED_COLUMN = 3
+  FINISHED = 1
+  UNFINISHED = 0
 
   def self.truncate(text, max_length)
     return text if text.length <= max_length
@@ -30,7 +33,8 @@ class Payload
   def build
     all_day, timed = shown_rows
     all_day = all_day.first(MAX_EVENTS)
-    timed = timed.first(MAX_EVENTS - all_day.size)
+    room_for_timed = MAX_EVENTS - all_day.size
+    drop_least_useful_row(timed) while timed.size > room_for_timed
     shrink(all_day, timed) while (all_day.any? || timed.any?) && too_big?(body_with(all_day, timed))
     body_with(all_day, timed)
   end
@@ -53,9 +57,13 @@ class Payload
     body.to_json.bytesize > @max_bytes
   end
 
-  # Drops from the end of the screen: timed rows first, then all-day titles.
   def shrink(all_day, timed)
-    timed.any? ? timed.pop : all_day.pop
+    timed.any? ? drop_least_useful_row(timed) : all_day.pop
+  end
+
+  def drop_least_useful_row(timed)
+    oldest_finished = timed.index { |row| row[FINISHED_COLUMN] == FINISHED }
+    oldest_finished ? timed.delete_at(oldest_finished) : timed.pop
   end
 
   def body_with(all_day, timed)
@@ -72,10 +80,11 @@ class Payload
   end
 
   # All-day titles are a plain list, and timed events are [start_minute,
-  # end_minute, title] rows read by index. A null in a row can be stripped on
-  # its way to the template, which shifts every position, so no row has one.
+  # end_minute, title, finished] rows read by index. A null in a row can be
+  # stripped on its way to the template, which shifts every position, so no
+  # row has one.
   def shown_rows
-    shown = @events.select { |event| on_day?(event) && !already_over?(event) }
+    shown = @events.select { |event| on_day?(event) }
     all_day, timed = shown.partition(&:all_day)
     [
       all_day.sort_by { |event| [event.starts_at, event.ends_at] }.map { |event| title_of(event) },
@@ -87,13 +96,11 @@ class Payload
     event.starts_at < day_end && event.ends_at > day_start
   end
 
-  def already_over?(event)
-    !tomorrow? && !event.all_day && event.ends_at <= @local_time
+  def row(event)
+    [minutes_into_day(event.starts_at), minutes_into_day(event.ends_at), title_of(event), finished_flag(event)]
   end
 
-  def row(event)
-    [minutes_into_day(event.starts_at), minutes_into_day(event.ends_at), title_of(event)]
-  end
+  def finished_flag(event) = (event.ends_at <= @local_time) ? FINISHED : UNFINISHED
 
   def title_of(event)
     self.class.truncate(event.title.strip, MAX_TITLE_LENGTH)

@@ -7,6 +7,7 @@ require "weather"
 class TemplateTest < Minitest::Test
   AFTERNOON = Time.new(2026, 9, 29, 14, 30, 0, SVALBARD_OFFSET)
   EVENING = Time.new(2026, 9, 29, 21, 0, 0, SVALBARD_OFFSET)
+  GREY = "color: #888"
   DAYTIME_WEATHER = [[14, 13, "clear", 6], [15, 12, "cloud", 10]].freeze
 
   def render(events: [], weather: DAYTIME_WEATHER, local_time: AFTERNOON)
@@ -20,6 +21,10 @@ class TemplateTest < Minitest::Test
 
   def at(hour, minute = 0)
     Time.new(2026, 9, 29, hour, minute, 0, SVALBARD_OFFSET)
+  end
+
+  def row_containing(html, title)
+    html.split('<div class="item">').find { |row| row.include?(title) } or flunk("no row for #{title}")
   end
 
   def test_the_daytime_header_says_events_today_without_repeating_the_date
@@ -70,6 +75,18 @@ class TemplateTest < Minitest::Test
 
     assert_includes html, "15:00–16:00"
     assert_includes html, "Dentist"
+  end
+
+  def test_finished_events_are_greyed_out
+    html = render(events: [event("Breakfast", at(8), at(9))])
+
+    assert_includes row_containing(html, "Breakfast"), GREY
+  end
+
+  def test_upcoming_events_are_not_greyed_out
+    html = render(events: [event("Dentist", at(15), at(16))])
+
+    refute_includes row_containing(html, "Dentist"), GREY
   end
 
   def test_pads_single_digit_hours_and_minutes

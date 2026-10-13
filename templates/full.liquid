@@ -13,7 +13,7 @@
     {% endfor %}
     {% for event in events %}
       {% capture time_range %}{% render "clock", minutes: event[0] %}–{% render "clock", minutes: event[1] %}{% endcapture %}
-      {% render "event_row", time_range: time_range, title: event[2] %}
+      {% render "event_row", time_range: time_range, title: event[2], finished: event[3] %}
     {% endfor %}
   </div>
 

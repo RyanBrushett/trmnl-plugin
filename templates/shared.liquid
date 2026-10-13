@@ -14,7 +14,7 @@
 {% template event_row %}
 <div class="item">
   <div class="content">
-    <div class="flex" style="gap: 20px; align-items: baseline;">
+    <div class="flex" style="gap: 20px; align-items: baseline;{% if finished == 1 %} color: #888;{% endif %}">
       <span class="text--large text--bold" style="flex: none; width: 140px;">{{ time_range }}</span>
       <span class="text--large" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ title | escape }}</span>
     </div>
